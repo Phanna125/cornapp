@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import type { AppScreen, DiagnosisResult, Language } from './types';
+import type { AppScreen, DiagnosisResult } from './types';
 import { TopBar } from './components/TopBar';
 import { HomeScreen } from './components/HomeScreen';
 import { AnalyzingScreen } from './components/AnalyzingScreen';
 import { DiagnosisScreen } from './components/DiagnosisScreen';
 import {
   initTelegramApp,
-  getTelegramWebApp,
   setupMainButton,
   setupBackButton,
   triggerHaptic,
@@ -18,71 +17,55 @@ import {
   type ModelStatus,
 } from './utils/inference';
 import {
-  saveScanToHistory,
+  saveScansToHistory,
   initializeDemoHistoryIfEmpty,
 } from './utils/history';
+import { UI_COPY } from './data/translations';
 
 export const App: React.FC = () => {
   const [screen, setScreen] = useState<AppScreen>('home');
-  const [language, setLanguage] = useState<Language>('kh'); // Default to Khmer for Cambodian farmers
   const [outdoorMode, setOutdoorMode] = useState<boolean>(false);
   const [modelStatus, setModelStatus] = useState<ModelStatus>('loading');
   const [analyzingImage, setAnalyzingImage] = useState<string | null>(null);
-  const [currentDiagnosis, setCurrentDiagnosis] = useState<DiagnosisResult | null>(null);
-  const [recentScans, setRecentScans] = useState<DiagnosisResult[]>([]);
+  const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(
+    null
+  );
+  const [diagnosisBatch, setDiagnosisBatch] = useState<DiagnosisResult[]>([]);
+  const [recentScans, setRecentScans] = useState<DiagnosisResult[]>(() =>
+    initializeDemoHistoryIfEmpty()
+  );
 
-  // 1. Initial Launch: Telegram setup, Model loading, and History check
   useEffect(() => {
     initTelegramApp();
 
-    const tg = getTelegramWebApp();
-    if (tg?.initDataUnsafe?.user?.language_code) {
-      const code = tg.initDataUnsafe.user.language_code.toLowerCase();
-      if (code.startsWith('km') || code.startsWith('kh')) {
-        setLanguage('kh');
-      }
-    }
-
-    // Subscribe to model loading status
     const unsubscribe = onModelStatusChange((status) => {
       setModelStatus(status);
     });
 
-    // Load or initialize offline model
     initializeModel();
-
-    // Populate recent scans
-    const initialHistory = initializeDemoHistoryIfEmpty();
-    setRecentScans(initialHistory);
 
     return () => {
       unsubscribe();
     };
   }, []);
 
-  // 2. Telegram Native MainButton & BackButton lifecycle bindings
   useEffect(() => {
     let cleanupMain: (() => void) | undefined;
     let cleanupBack: (() => void) | undefined;
 
     if (screen === 'diagnosis') {
-      const buttonText =
-        language === 'kh'
-          ? 'ស្កេនស្លឹកថ្មី / Scan Another Leaf'
-          : 'Scan Another Leaf / ស្កេនស្លឹកថ្មី';
-
       cleanupMain = setupMainButton(
-        buttonText,
+        UI_COPY.scanAnotherLeaf,
         () => {
           setScreen('home');
-          setCurrentDiagnosis(null);
+          setDiagnosisBatch([]);
         },
-        { color: '#16a34a', textColor: '#ffffff' }
+        { color: '#f7f0c6', textColor: '#1a1612' }
       );
 
       cleanupBack = setupBackButton(() => {
         setScreen('home');
-        setCurrentDiagnosis(null);
+        setDiagnosisBatch([]);
       });
     } else if (screen === 'analyzing') {
       cleanupBack = setupBackButton(() => {
@@ -94,57 +77,54 @@ export const App: React.FC = () => {
       if (cleanupMain) cleanupMain();
       if (cleanupBack) cleanupBack();
     };
-  }, [screen, language]);
+  }, [screen]);
 
-  // 3. Process Captured or Uploaded Leaf Image
-  const handleSelectImage = useCallback(
-    async (fileOrUrl: File | string) => {
-      let previewUrl = '';
-      if (typeof fileOrUrl === 'string') {
-        previewUrl = fileOrUrl;
-      } else {
-        previewUrl = URL.createObjectURL(fileOrUrl);
+  const handleSelectImages = useCallback(async (items: Array<File | string>) => {
+    if (items.length === 0) return;
+
+    const results: DiagnosisResult[] = [];
+    const total = items.length;
+    setScreen('analyzing');
+
+    try {
+      for (let i = 0; i < total; i++) {
+        const item = items[i];
+        const previewUrl =
+          typeof item === 'string' ? item : URL.createObjectURL(item);
+
+        setAnalyzingImage(previewUrl);
+        setBatchProgress(total > 1 ? { current: i + 1, total } : null);
+
+        const result = await diagnoseCornLeaf(item);
+        results.push(result);
       }
 
-      setAnalyzingImage(previewUrl);
-      setScreen('analyzing');
+      triggerHaptic('notification', 'success');
 
-      try {
-        // Run MobileNetV3-Large on-device inference pipeline
-        const result = await diagnoseCornLeaf(fileOrUrl);
+      const updatedHistory = saveScansToHistory(results);
+      setRecentScans(updatedHistory);
 
-        // Tactile Feedback (tg.HapticFeedback): notificationOccurred('success')
-        triggerHaptic('notification', 'success');
-
-        // Persist to offline history
-        const updatedHistory = saveScanToHistory(result);
-        setRecentScans(updatedHistory);
-
-        setCurrentDiagnosis(result);
-        setScreen('diagnosis');
-      } catch (err) {
-        console.error('Diagnosis processing failed:', err);
-        triggerHaptic('notification', 'error');
-        alert('Could not process leaf image. Please try again with clear lighting.');
-        setScreen('home');
-      }
-    },
-    []
-  );
+      setBatchProgress(null);
+      setDiagnosisBatch(results);
+      setScreen('diagnosis');
+    } catch (err) {
+      console.error('Diagnosis processing failed:', err);
+      triggerHaptic('notification', 'error');
+      setBatchProgress(null);
+      alert('Could not process one or more leaf images. Please try again with clear lighting.');
+      setScreen('home');
+    }
+  }, []);
 
   const handleSelectRecentScan = useCallback((scan: DiagnosisResult) => {
-    setCurrentDiagnosis(scan);
+    setDiagnosisBatch([scan]);
     setScreen('diagnosis');
   }, []);
 
   const handleScanAnother = useCallback(() => {
     triggerHaptic('impact', 'medium');
-    setCurrentDiagnosis(null);
+    setDiagnosisBatch([]);
     setScreen('home');
-  }, []);
-
-  const handleToggleLanguage = useCallback(() => {
-    setLanguage((prev) => (prev === 'kh' ? 'en' : 'kh'));
   }, []);
 
   const handleToggleOutdoorMode = useCallback(() => {
@@ -153,44 +133,38 @@ export const App: React.FC = () => {
 
   return (
     <div
-      className={`min-h-screen flex flex-col transition-colors duration-200 ${
-        outdoorMode
-          ? 'bg-black text-white font-semibold'
-          : 'bg-[var(--tg-theme-bg-color,#0b1320)] text-[var(--tg-theme-text-color,#f8fafc)]'
+      className={`min-h-screen flex flex-col transition-colors duration-300 text-[#f7f4ef] ${
+        outdoorMode ? 'outdoor-solid' : 'ambient-canvas'
       }`}
     >
-      {/* Sticky App Header */}
       <TopBar
-        language={language}
-        onToggleLanguage={handleToggleLanguage}
         outdoorMode={outdoorMode}
         onToggleOutdoorMode={handleToggleOutdoorMode}
         modelStatus={modelStatus}
       />
 
-      {/* Main 3-Screen Body */}
-      <main className="flex-1 flex flex-col justify-between">
+      <main className="flex-1 flex flex-col">
         {screen === 'home' && (
           <HomeScreen
-            language={language}
-            onSelectImage={handleSelectImage}
+            onSelectImages={handleSelectImages}
             recentScans={recentScans}
             onSelectRecentScan={handleSelectRecentScan}
             onClearHistory={() => setRecentScans([])}
-            outdoorMode={outdoorMode}
           />
         )}
 
         {screen === 'analyzing' && analyzingImage && (
-          <AnalyzingScreen language={language} imagePreviewUrl={analyzingImage} />
+          <AnalyzingScreen
+            imagePreviewUrl={analyzingImage}
+            batchProgress={batchProgress}
+          />
         )}
 
-        {screen === 'diagnosis' && currentDiagnosis && (
+        {screen === 'diagnosis' && diagnosisBatch.length > 0 && (
           <DiagnosisScreen
-            language={language}
-            diagnosis={currentDiagnosis}
+            key={diagnosisBatch.map((d) => d.id).join(',')}
+            diagnoses={diagnosisBatch}
             onScanAnother={handleScanAnother}
-            outdoorMode={outdoorMode}
           />
         )}
       </main>

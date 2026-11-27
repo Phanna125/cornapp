@@ -14,6 +14,7 @@ try {
 export type ModelStatus = 'unloaded' | 'loading' | 'ready' | 'fallback_ready' | 'error';
 
 let session: ort.InferenceSession | null = null;
+let initPromise: Promise<void> | null = null;
 let currentStatus: ModelStatus = 'unloaded';
 const statusListeners: Array<(status: ModelStatus) => void> = [];
 
@@ -35,36 +36,50 @@ const notifyStatus = (status: ModelStatus) => {
 
 /**
  * Initializes and caches the MobileNetV3 ONNX model.
- * If the 16MB file is present at /models/mobilenetv3_corn.onnx, it loads via WASM.
- * Otherwise, it initializes the built-in offline engine so Cambodian farmers
- * and presentation judges always experience a responsive 3-screen workflow.
+ * Checks /models/mobilenetv3_corn_single.onnx first, then /models/mobilenetv3_corn.onnx.
+ * Falls back to the built-in offline engine if no ONNX model file is present.
  */
 export const initializeModel = async (): Promise<void> => {
   if (session || currentStatus === 'ready' || currentStatus === 'fallback_ready') {
     return;
   }
-
-  notifyStatus('loading');
-  const modelUrl = '/models/mobilenetv3_corn.onnx';
-
-  try {
-    // Check if model file exists with HEAD request
-    const checkResp = await fetch(modelUrl, { method: 'HEAD' });
-    if (checkResp.ok) {
-      session = await ort.InferenceSession.create(modelUrl, {
-        executionProviders: ['wasm'],
-        graphOptimizationLevel: 'all',
-      });
-      notifyStatus('ready');
-      console.log('MobileNetV3 ONNX model loaded successfully into WASM runtime.');
-      return;
-    }
-  } catch {
-    // Model not bundled or fetch failed; proceed to local resilient offline engine
+  if (initPromise) {
+    return initPromise;
   }
 
-  // Graceful offline fallback ready
-  notifyStatus('fallback_ready');
+  initPromise = (async () => {
+    notifyStatus('loading');
+    const candidateUrls = [
+      '/models/mobilenetv3_corn_single.onnx',
+      '/models/mobilenetv3_corn.onnx',
+    ];
+
+    for (const modelUrl of candidateUrls) {
+      try {
+        const checkResp = await fetch(modelUrl, { method: 'HEAD' });
+        const contentType = checkResp.headers.get('content-type') || '';
+        if (checkResp.ok && !contentType.includes('text/html')) {
+          session = await ort.InferenceSession.create(modelUrl, {
+            executionProviders: ['wasm'],
+            graphOptimizationLevel: 'all',
+          });
+          notifyStatus('ready');
+          console.log(`MobileNetV3 ONNX model loaded from ${modelUrl}.`);
+          return;
+        }
+      } catch (err) {
+        console.warn(`Failed to load ONNX model at ${modelUrl}:`, err);
+      }
+    }
+
+    notifyStatus('fallback_ready');
+  })();
+
+  try {
+    await initPromise;
+  } finally {
+    initPromise = null;
+  }
 };
 
 /**
@@ -103,11 +118,11 @@ const computeVisualHeuristicLogits = (tensor: Float32Array): number[] => {
   const avgB = bSum / count;
   const avgVariance = spotVariance / count;
 
-  // 5 classes:
-  // 0: healthy
-  // 1: common_rust (rusty brownish/amber pustules: higher red & moderate variance)
-  // 2: corn_leaf_blight (cigar lesions: dry grayish tan, high variance)
-  // 3: gray_leaf_spot (grayish blocky patches)
+  // 5 classes (matches ImageFolder alphabetical mapping in training notebook):
+  // 0: common_rust (rusty brownish/amber pustules: higher red & moderate variance)
+  // 1: corn_leaf_blight (cigar lesions: dry grayish tan, high variance)
+  // 2: gray_leaf_spot (grayish blocky patches)
+  // 3: healthy
   // 4: insects_damage (irregular holes / chewed foliage)
 
   // Determine dominant signature with slight deterministic noise
@@ -115,39 +130,39 @@ const computeVisualHeuristicLogits = (tensor: Float32Array): number[] => {
 
   if (avgG > avgR && avgG > avgB && avgVariance < 0.6) {
     // High healthy green signature
-    logits[0] = 5.2 + Math.random() * 0.4;
-    logits[1] = 0.4 + Math.random() * 0.2;
-    logits[2] = 0.2 + Math.random() * 0.2;
-    logits[3] = 0.3 + Math.random() * 0.2;
+    logits[0] = 0.4 + Math.random() * 0.2;
+    logits[1] = 0.2 + Math.random() * 0.2;
+    logits[2] = 0.3 + Math.random() * 0.2;
+    logits[3] = 5.2 + Math.random() * 0.4; // Healthy (Index 3)
     logits[4] = 0.5 + Math.random() * 0.2;
   } else if (avgR > avgB && avgVariance > 0.8) {
     // Amber / rust pustules signature
-    logits[0] = 0.3 + Math.random() * 0.2;
-    logits[1] = 5.6 + Math.random() * 0.5; // Common Rust
-    logits[2] = 1.1 + Math.random() * 0.3;
-    logits[3] = 0.8 + Math.random() * 0.3;
+    logits[0] = 5.6 + Math.random() * 0.5; // Common Rust (Index 0)
+    logits[1] = 1.1 + Math.random() * 0.3;
+    logits[2] = 0.8 + Math.random() * 0.3;
+    logits[3] = 0.3 + Math.random() * 0.2;
     logits[4] = 0.6 + Math.random() * 0.2;
   } else if (avgVariance > 1.2) {
     // Heavy blight lesions
-    logits[0] = 0.2 + Math.random() * 0.2;
-    logits[1] = 0.9 + Math.random() * 0.3;
-    logits[2] = 5.8 + Math.random() * 0.4; // Corn Leaf Blight
-    logits[3] = 1.2 + Math.random() * 0.3;
+    logits[0] = 0.9 + Math.random() * 0.3;
+    logits[1] = 5.8 + Math.random() * 0.4; // Corn Leaf Blight (Index 1)
+    logits[2] = 1.2 + Math.random() * 0.3;
+    logits[3] = 0.2 + Math.random() * 0.2;
     logits[4] = 0.7 + Math.random() * 0.2;
   } else if (Math.abs(avgR - avgG) < 0.2 && avgB > 0.1) {
     // Gray leaf spot signature
-    logits[0] = 0.4 + Math.random() * 0.2;
-    logits[1] = 0.7 + Math.random() * 0.2;
-    logits[2] = 1.3 + Math.random() * 0.3;
-    logits[3] = 5.4 + Math.random() * 0.4; // Gray Leaf Spot
+    logits[0] = 0.7 + Math.random() * 0.2;
+    logits[1] = 1.3 + Math.random() * 0.3;
+    logits[2] = 5.4 + Math.random() * 0.4; // Gray Leaf Spot (Index 2)
+    logits[3] = 0.4 + Math.random() * 0.2;
     logits[4] = 0.5 + Math.random() * 0.2;
   } else {
     // Insects / irregular pattern
-    logits[0] = 0.3 + Math.random() * 0.2;
-    logits[1] = 0.5 + Math.random() * 0.2;
-    logits[2] = 0.8 + Math.random() * 0.3;
-    logits[3] = 0.6 + Math.random() * 0.2;
-    logits[4] = 5.5 + Math.random() * 0.4; // Insects Damage
+    logits[0] = 0.5 + Math.random() * 0.2;
+    logits[1] = 0.8 + Math.random() * 0.3;
+    logits[2] = 0.6 + Math.random() * 0.2;
+    logits[3] = 0.3 + Math.random() * 0.2;
+    logits[4] = 5.5 + Math.random() * 0.4; // Insects Damage (Index 4)
   }
 
   return logits;
@@ -161,30 +176,41 @@ export const diagnoseCornLeaf = async (
 ): Promise<DiagnosisResult> => {
   const startTime = performance.now();
 
-  // 1. Run exact PyTorch pipeline: Resize(256) -> CenterCrop(224) -> ImageNet Normalize
-  const { tensor, previewUrl } = await preprocessImageForMobileNet(source);
+  // 1. Run PyTorch-aligned pipeline: Resize(256) -> CenterCrop(224) -> ImageNet Normalize
+  const { tensor, flippedTensor, previewUrl } = await preprocessImageForMobileNet(source);
 
   let rawLogits: number[] = [];
+  let engine: 'onnx' | 'heuristic' = 'heuristic';
 
-  // 2. Real ONNX WASM Inference if model session is active
+  // 2. Real ONNX WASM Inference with 2-view TTA (original + horizontal flip)
   if (session) {
     try {
       const inputName = session.inputNames[0] || 'input';
+      const outputName = session.outputNames[0] || 'output';
+
       const onnxTensor = new ort.Tensor('float32', tensor, [1, 3, 224, 224]);
-      const feeds: Record<string, ort.Tensor> = { [inputName]: onnxTensor };
-      const results = await session.run(feeds);
-      const outputName = session.outputNames[0] || Object.keys(results)[0];
-      const outputTensor = results[outputName];
-      rawLogits = Array.from(outputTensor.data as Float32Array);
+      const resOrig = await session.run({ [inputName]: onnxTensor });
+      const origOut = Array.from(
+        (resOrig[outputName] ?? Object.values(resOrig)[0]).data as Float32Array
+      );
+
+      const flippedOnnxTensor = new ort.Tensor('float32', flippedTensor, [1, 3, 224, 224]);
+      const resFlip = await session.run({ [inputName]: flippedOnnxTensor });
+      const flipOut = Array.from(
+        (resFlip[outputName] ?? Object.values(resFlip)[0]).data as Float32Array
+      );
+
+      rawLogits = origOut.map((val, idx) => (val + (flipOut[idx] ?? val)) * 0.5);
+      engine = 'onnx';
     } catch (err) {
       console.warn('ONNX WASM session execution failed, falling back to heuristic engine:', err);
       rawLogits = computeVisualHeuristicLogits(tensor);
+      engine = 'heuristic';
     }
   } else {
-    // Built-in offline neural feature analyzer
-    // Simulate typical MobileNetV3-Large mobile inference latency (~180ms)
     await new Promise((r) => setTimeout(r, 180));
     rawLogits = computeVisualHeuristicLogits(tensor);
+    engine = 'heuristic';
   }
 
   // 3. Softmax activation to convert logits to probabilities
@@ -196,8 +222,7 @@ export const diagnoseCornLeaf = async (
     const prob = probabilities[index] || 0;
     return {
       id: key,
-      nameEn: disease.name.en,
-      nameKh: disease.name.kh,
+      name: disease.name,
       probability: prob,
       percentage: (prob * 100).toFixed(1) + '%',
       color: disease.badgeColor.dot,
@@ -221,5 +246,6 @@ export const diagnoseCornLeaf = async (
     confidencePercentage: topScore.percentage,
     allScores,
     inferenceDurationMs,
+    engine,
   };
 };

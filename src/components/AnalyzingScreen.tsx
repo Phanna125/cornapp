@@ -1,18 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { ShieldCheck, Zap, Cpu, CheckCircle } from 'lucide-react';
-import type { Language } from '../types';
-import { TRANSLATIONS } from '../data/translations';
+import { Check, Lock } from 'lucide-react';
+import { UI_COPY } from '../data/translations';
 
 interface AnalyzingScreenProps {
-  language: Language;
   imagePreviewUrl: string;
+  batchProgress?: { current: number; total: number } | null;
 }
 
 export const AnalyzingScreen: React.FC<AnalyzingScreenProps> = ({
-  language,
   imagePreviewUrl,
+  batchProgress,
 }) => {
-  const t = TRANSLATIONS[language];
   const [elapsedMs, setElapsedMs] = useState(0);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
 
@@ -29,91 +27,101 @@ export const AnalyzingScreen: React.FC<AnalyzingScreenProps> = ({
       clearTimeout(stepTimer1);
       clearTimeout(stepTimer2);
     };
-  }, []);
+  }, [imagePreviewUrl]);
 
   const steps = [
-    t.stepPreprocessing,
-    t.stepInference,
-    t.stepSoftmax,
+    UI_COPY.stepPreprocessing,
+    UI_COPY.stepInference,
+    UI_COPY.stepSoftmax,
   ];
 
+  const isBatch = Boolean(batchProgress && batchProgress.total > 1);
+  const batchPercent = isBatch && batchProgress
+    ? Math.round((batchProgress.current / batchProgress.total) * 100)
+    : 0;
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center px-4 py-6 max-w-md mx-auto w-full text-center">
-      {/* Captured Photo Container with Laser Scanner Sweep */}
-      <div className="relative w-64 h-64 sm:w-72 sm:h-72 rounded-3xl overflow-hidden border-2 border-emerald-400 shadow-2xl shadow-emerald-950/80 bg-slate-950">
-        <img
-          src={imagePreviewUrl}
-          alt="Scanning leaf"
-          className="w-full h-full object-cover filter brightness-95"
-        />
-
-        {/* Dark Vignette Overlay */}
-        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-slate-950/50 pointer-events-none"></div>
-
-        {/* High-Tech Animated Laser Line with Double Glow */}
-        <div className="absolute left-0 right-0 h-1 bg-gradient-to-r from-emerald-500 via-lime-200 to-emerald-500 shadow-[0_0_20px_#22c55e,0_0_40px_#4ade80] animate-laser pointer-events-none z-10"></div>
-
-        {/* Viewfinder Target Reticle HUD */}
-        <div className="absolute inset-4 border border-emerald-500/40 rounded-2xl pointer-events-none flex flex-col justify-between p-2.5">
-          <div className="flex justify-between items-center text-[10px] font-mono text-emerald-400">
-            <span className="flex items-center gap-1">
-              <Cpu className="w-3 h-3 text-emerald-400" />
-              <span>MOBILENET_V3</span>
+    <div className="flex flex-col flex-1 items-center justify-center px-5 py-6 max-w-md mx-auto w-full">
+      <div className="glass-card rounded-[32px] p-5 w-full space-y-5">
+        {/* Top Row */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="px-3.5 py-1 rounded-full bg-white/12 border border-white/20 text-xs font-medium text-white/90">
+              {UI_COPY.analyzingBadge}
             </span>
-            <span>224×224 PLANAR</span>
+            {isBatch && batchProgress && (
+              <span className="px-3 py-1 rounded-full bg-[#f7f0c6]/20 border border-[#f7f0c6]/40 text-xs font-semibold text-[#f7f0c6]">
+                Leaf {batchProgress.current} of {batchProgress.total}
+              </span>
+            )}
           </div>
-          <div className="flex justify-between items-center text-[10px] font-mono text-emerald-400">
-            <span>WASM MULTI-SIMD</span>
-            <span className="font-bold text-white">{elapsedMs} ms</span>
-          </div>
+          <span className="text-xs font-medium text-white/65 tabular-nums">
+            {elapsedMs} ms
+          </span>
         </div>
 
-        {/* Circular Radar Scan Effect */}
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="w-20 h-20 rounded-full border-2 border-emerald-400/30 border-t-emerald-300 animate-spin"></div>
-        </div>
-      </div>
-
-      {/* Progress & Step Indicators */}
-      <div className="mt-6 space-y-2 w-full max-w-xs">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-950/90 border border-emerald-500/40 text-emerald-300 text-xs font-bold shadow-md">
-          <Zap className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-          <span>MobileNetV3-Large (WASM)</span>
-        </div>
-
-        <h2 className="text-xl font-extrabold text-white tracking-tight font-['Plus_Jakarta_Sans',var(--font-khmer)]">
-          {t.analyzingTitle}
-        </h2>
-        <p className="text-xs font-semibold text-slate-300">
-          {t.analyzingSubtitle}
-        </p>
-
-        {/* Dynamic Pipeline Steps */}
-        <div className="mt-4 p-3 rounded-2xl bg-slate-900/90 border border-slate-800 text-left space-y-1.5 shadow-inner">
-          {steps.map((step, idx) => (
+        {isBatch && (
+          <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
             <div
-              key={idx}
-              className={`flex items-center space-x-2 text-[11px] transition-colors ${
-                idx <= currentStepIndex ? 'text-emerald-300 font-bold' : 'text-slate-500'
-              }`}
-            >
-              {idx < currentStepIndex ? (
-                <CheckCircle className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
-              ) : idx === currentStepIndex ? (
-                <span className="w-3.5 h-3.5 rounded-full border-2 border-emerald-400 border-t-transparent animate-spin flex-shrink-0" />
-              ) : (
-                <span className="w-3.5 h-3.5 rounded-full border border-slate-700 flex-shrink-0" />
-              )}
-              <span className="truncate">{step}</span>
-            </div>
-          ))}
-        </div>
-      </div>
+              className="h-full rounded-full bg-[#f7f0c6] transition-all duration-300"
+              style={{ width: `${batchPercent}%` }}
+            />
+          </div>
+        )}
 
-      {/* Privacy Guarantee Badge */}
-      <div className="mt-6 flex items-center justify-center space-x-2 text-xs font-medium text-emerald-400/90 bg-emerald-950/40 px-3.5 py-1.5 rounded-2xl border border-emerald-800/40">
-        <ShieldCheck className="w-4 h-4 text-emerald-400" />
-        <span>{t.analyzingPrivacy}</span>
+        {/* Clean Leaf Preview with Subtle Scan Sweep */}
+        <div className="relative w-full h-56 rounded-2xl overflow-hidden border border-white/20 bg-black/40">
+          <img
+            src={imagePreviewUrl}
+            alt="Leaf being analyzed"
+            className="w-full h-full object-cover"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-black/20 pointer-events-none" />
+          <div className="absolute left-0 right-0 h-0.5 bg-[#f7f0c6] shadow-[0_0_16px_rgba(247,240,198,0.85)] animate-scan-line pointer-events-none" />
+        </div>
+
+        {/* Title */}
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight text-white">
+            {isBatch ? 'Scanning leaf batch' : UI_COPY.analyzingTitle}
+          </h2>
+          <p className="text-xs text-white/65 mt-1">
+            {UI_COPY.analyzingSubtitle}
+          </p>
+        </div>
+
+        {/* Calm Step Checklist */}
+        <div className="border-t border-white/15 pt-4 space-y-2.5">
+          {steps.map((step, idx) => {
+            const done = idx < currentStepIndex;
+            const active = idx === currentStepIndex;
+            return (
+              <div
+                key={idx}
+                className={`flex items-center gap-2.5 text-xs transition-colors ${
+                  done || active ? 'text-white font-medium' : 'text-white/40'
+                }`}
+              >
+                {done ? (
+                  <span className="w-4 h-4 rounded-full bg-[#f7f0c6] text-[#1a1612] flex items-center justify-center flex-shrink-0">
+                    <Check className="w-2.5 h-2.5 stroke-[3]" />
+                  </span>
+                ) : active ? (
+                  <span className="w-4 h-4 rounded-full border-2 border-[#f7f0c6] border-t-transparent animate-spin flex-shrink-0" />
+                ) : (
+                  <span className="w-4 h-4 rounded-full border border-white/25 flex-shrink-0" />
+                )}
+                <span>{step}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Subtle Privacy Note */}
+        <div className="flex items-center gap-2 text-[11px] text-white/55 pt-1">
+          <Lock className="w-3.5 h-3.5 flex-shrink-0" />
+          <span>{UI_COPY.analyzingPrivacy}</span>
+        </div>
       </div>
     </div>
   );

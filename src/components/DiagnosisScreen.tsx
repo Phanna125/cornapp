@@ -1,137 +1,77 @@
 import React, { useState } from 'react';
 import {
-  ChevronDown,
-  ChevronUp,
-  AlertTriangle,
-  CheckCircle2,
-  Bug,
-  Flame,
+  BarChart3,
   RefreshCw,
-  Sparkles,
-  Info,
-  Clock,
-  Layers,
-  Volume2,
-  VolumeX,
   Share2,
   Maximize2,
   X,
+  ChevronRight,
 } from 'lucide-react';
-import type { DiagnosisResult, DiseaseId, Language } from '../types';
-import { TRANSLATIONS } from '../data/translations';
+import type { DiagnosisResult } from '../types';
+import { UI_COPY } from '../data/translations';
 import { triggerHaptic, getTelegramWebApp } from '../utils/telegram';
 
 interface DiagnosisScreenProps {
-  language: Language;
-  diagnosis: DiagnosisResult;
+  diagnoses: DiagnosisResult[];
   onScanAnother: () => void;
-  outdoorMode: boolean;
 }
 
 export const DiagnosisScreen: React.FC<DiagnosisScreenProps> = ({
-  language,
-  diagnosis,
+  diagnoses,
   onScanAnother,
-  outdoorMode,
 }) => {
-  const t = TRANSLATIONS[language];
+  const [selectedIndex, setSelectedIndex] = useState(0);
   const [showAllScores, setShowAllScores] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
   const [isFullscreenModalOpen, setIsFullscreenModalOpen] = useState(false);
 
-  const { topDisease, confidencePercentage, allScores, imageUrl, inferenceDurationMs } = diagnosis;
+  const activeDiagnosis = diagnoses[selectedIndex] ?? diagnoses[0];
+  const {
+    topDisease,
+    confidencePercentage,
+    allScores,
+    imageUrl,
+    inferenceDurationMs,
+    engine,
+  } = activeDiagnosis;
+
+  const isBatch = diagnoses.length > 1;
+  const issuesCount = diagnoses.filter((d) => d.topDisease.id !== 'healthy').length;
+  const healthyCount = diagnoses.length - issuesCount;
 
   const toggleAllScores = () => {
     triggerHaptic('selection');
     setShowAllScores((prev) => !prev);
   };
 
-  const getDiseaseIcon = (id: DiseaseId) => {
-    switch (id) {
+  const getSeverityLabel = (severity = topDisease.severity) => {
+    switch (severity) {
       case 'healthy':
-        return <CheckCircle2 className="w-6 h-6 text-emerald-400" />;
-      case 'common_rust':
-        return <AlertTriangle className="w-6 h-6 text-amber-400" />;
-      case 'corn_leaf_blight':
-        return <Flame className="w-6 h-6 text-rose-400" />;
-      case 'gray_leaf_spot':
-        return <Layers className="w-6 h-6 text-purple-400" />;
-      case 'insects_damage':
-        return <Bug className="w-6 h-6 text-orange-400" />;
-    }
-  };
-
-  const getSeverityBadge = () => {
-    switch (topDisease.severity) {
-      case 'healthy':
-        return {
-          label: t.severityHealthy,
-          color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
-        };
+        return UI_COPY.severityHealthy;
       case 'moderate':
-        return {
-          label: t.severityModerate,
-          color: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
-        };
+        return UI_COPY.severityModerate;
       case 'high':
-        return {
-          label: t.severityHigh,
-          color: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
-        };
+        return UI_COPY.severityHigh;
       case 'severe':
-        return {
-          label: t.severitySevere,
-          color: 'bg-rose-500/20 text-rose-300 border-rose-500/40',
-        };
+        return UI_COPY.severitySevere;
       case 'action_needed':
-        return {
-          label: t.severityAction,
-          color: 'bg-orange-500/20 text-orange-300 border-orange-500/40',
-        };
+        return UI_COPY.severityAction;
     }
   };
 
-  const adviceList =
-    language === 'kh' ? topDisease.treatmentAdvice.kh : topDisease.treatmentAdvice.en;
-
-  const causeText = language === 'kh' ? topDisease.causes.kh : topDisease.causes.en;
-
-  // Text-to-Speech audio guide
-  const handleToggleVoice = () => {
-    triggerHaptic('impact', 'medium');
-    if (!('speechSynthesis' in window)) {
-      alert('Speech synthesis not supported in this browser.');
-      return;
-    }
-
-    if (isSpeaking) {
-      window.speechSynthesis.cancel();
-      setIsSpeaking(false);
-      return;
-    }
-
-    const diseaseTitle = language === 'kh' ? topDisease.name.kh : topDisease.name.en;
-    const spokenText = `${diseaseTitle}. ${adviceList.join('. ')}`;
-
-    const utterance = new SpeechSynthesisUtterance(spokenText);
-    utterance.rate = 0.95;
-    utterance.lang = language === 'kh' ? 'km-KH' : 'en-US';
-
-    utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = () => setIsSpeaking(false);
-
-    setIsSpeaking(true);
-    window.speechSynthesis.speak(utterance);
-  };
-
-  // Share diagnosis via Telegram
   const handleShareTelegram = () => {
     triggerHaptic('impact', 'medium');
-    const diseaseName = language === 'kh' ? topDisease.name.kh : topDisease.name.en;
-    const formattedText = t.shareTextPrompt
-      .replace('{disease}', diseaseName)
-      .replace('{confidence}', confidencePercentage)
-      .replace('{advice}', adviceList[0] || '');
+    let formattedText = '';
+    if (isBatch) {
+      const summaryLines = diagnoses.map(
+        (d, idx) => `${idx + 1}. ${d.topDisease.name} (${d.confidencePercentage})`
+      );
+      formattedText = `Corn Leaf Batch Scan (${diagnoses.length} leaves)\n${summaryLines.join('\n')}`;
+    } else {
+      formattedText = UI_COPY.shareTextPrompt
+        .replace('{disease}', topDisease.name)
+        .replace('{confidence}', confidencePercentage)
+        .replace('{advice}', topDisease.treatmentAdvice[0] || '');
+    }
 
     const tg = getTelegramWebApp();
     const shareUrl = `https://t.me/share/url?text=${encodeURIComponent(formattedText)}`;
@@ -143,238 +83,271 @@ export const DiagnosisScreen: React.FC<DiagnosisScreenProps> = ({
     }
   };
 
-  const severityBadge = getSeverityBadge();
-
   return (
-    <div className="flex flex-col flex-1 px-4 py-3 space-y-4 max-w-lg mx-auto w-full pb-24 relative">
-      {/* 1. Photo Specimen Thumbnail with Metadata */}
-      <div className="relative w-full h-48 sm:h-52 rounded-3xl overflow-hidden border-2 border-slate-700/80 shadow-2xl bg-slate-950 group">
-        <img
-          src={imageUrl}
-          alt="Diagnosed corn leaf"
-          className="w-full h-full object-cover cursor-pointer transition-transform duration-300 group-hover:scale-105"
-          onClick={() => setIsFullscreenModalOpen(true)}
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent pointer-events-none"></div>
+    <div className="flex flex-col flex-1 px-5 pb-20 pt-2 space-y-4 max-w-md mx-auto w-full relative">
+      {/* Multi-Detect Leaf Selector Strip */}
+      {isBatch && (
+        <div className="space-y-2.5">
+          <div className="flex items-center justify-between px-0.5 text-xs">
+            <span className="font-semibold text-white/85">
+              Batch results ({diagnoses.length} leaves)
+            </span>
+            <span className="text-white/60">
+              {issuesCount > 0 ? `${issuesCount} issue${issuesCount > 1 ? 's' : ''}` : 'All healthy'}
+              {healthyCount > 0 && issuesCount > 0 ? ` • ${healthyCount} healthy` : ''}
+            </span>
+          </div>
 
-        {/* Top-Right Latency Badge */}
-        <div className="absolute top-3 right-3 px-2.5 py-1 rounded-full bg-slate-900/90 backdrop-blur-md border border-slate-700 text-[11px] font-mono text-emerald-400 flex items-center gap-1.5 shadow-md">
-          <Clock className="w-3 h-3" />
-          <span>{inferenceDurationMs} ms on-device</span>
-        </div>
-
-        {/* Top-Left Inspect Zoom Button */}
-        <button
-          onClick={() => setIsFullscreenModalOpen(true)}
-          className="absolute top-3 left-3 p-2 rounded-full bg-slate-900/80 backdrop-blur-md border border-slate-700 text-slate-300 hover:text-white shadow-md active:scale-95"
-        >
-          <Maximize2 className="w-3.5 h-3.5" />
-        </button>
-
-        {/* Bottom Thumbnail Info */}
-        <div className="absolute bottom-2.5 left-3.5 right-3.5 flex items-center justify-between text-xs text-slate-300">
-          <span className="font-semibold text-slate-200">
-            {language === 'kh' ? 'គំរូស្លឹកដែលបានពិនិត្យ' : 'Scanned Specimen'}
-          </span>
-          <span className="text-[11px] text-emerald-400 font-mono font-bold">MobileNetV3</span>
-        </div>
-      </div>
-
-      {/* 2. Color-Coded Result Banner */}
-      <div
-        className={`p-4 sm:p-5 rounded-3xl border-2 transition-all shadow-xl relative overflow-hidden ${
-          topDisease.badgeColor.border
-        } ${topDisease.badgeColor.bg} ${
-          outdoorMode ? 'border-4 font-black shadow-2xl' : ''
-        }`}
-      >
-        <div className="flex items-start justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="p-3 rounded-2xl bg-slate-950/80 border border-white/10 shadow-lg">
-              {getDiseaseIcon(topDisease.id)}
-            </div>
-            <div>
-              {/* Severity Pill */}
-              <div className="flex items-center gap-2 mb-1">
-                <span
-                  className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider border ${severityBadge.color}`}
+          <div className="flex items-center gap-2.5 overflow-x-auto no-scrollbar py-1">
+            {diagnoses.map((item, idx) => {
+              const isSelected = idx === selectedIndex;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => {
+                    triggerHaptic('selection');
+                    setSelectedIndex(idx);
+                  }}
+                  className={`flex-shrink-0 flex items-center gap-2.5 pl-1.5 pr-3.5 py-1.5 rounded-full border transition-all active:scale-95 ${
+                    isSelected
+                      ? 'bg-white/20 border-white/75 text-white shadow-md'
+                      : 'bg-white/8 hover:bg-white/14 border-white/15 text-white/75'
+                  }`}
                 >
-                  {severityBadge.label}
-                </span>
-              </div>
-              <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight text-white font-['Plus_Jakarta_Sans',var(--font-khmer)]">
-                {language === 'kh' ? topDisease.name.kh : topDisease.name.en}
-              </h2>
-              <p className="text-xs italic text-slate-300 font-mono">
-                {topDisease.scientificName}
-              </p>
-            </div>
+                  <img
+                    src={item.imageUrl}
+                    alt={item.topDisease.name}
+                    className="w-8 h-8 rounded-full object-cover border border-white/25"
+                  />
+                  <div className="text-left">
+                    <p className="text-xs font-semibold leading-tight">
+                      #{idx + 1} {item.topDisease.shortName}
+                    </p>
+                    <p className="text-[10px] text-white/60 leading-tight">
+                      {item.confidencePercentage}
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
+      )}
 
-        {/* 3. Big Clear Confidence Score & Scores Toggle */}
-        <div className="mt-4 pt-3.5 border-t border-white/10 flex items-center justify-between">
-          <div>
-            <p className="text-xs font-bold text-slate-300">{t.confidenceLabel}</p>
-            <p className="text-3xl sm:text-4xl font-black tracking-tight text-white flex items-baseline gap-1">
-              <span>{confidencePercentage}</span>
-              <span className="text-xs font-semibold text-emerald-400">match</span>
-            </p>
+      {/* Main Reference-Style Hero Diagnosis Card */}
+      <section className="glass-card rounded-[32px] p-5 space-y-5">
+        {/* Top Row: Severity Pill + Confidence Metadata + Expand Button */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <span
+              className={`px-3.5 py-1 rounded-full border text-xs font-medium flex items-center gap-1.5 ${topDisease.badgeColor.bg} ${topDisease.badgeColor.text} ${topDisease.badgeColor.border}`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${topDisease.badgeColor.dot}`} />
+              <span>{getSeverityLabel()}</span>
+            </span>
+            <span className="text-xs font-medium text-white/65">
+              {isBatch ? `Leaf #${selectedIndex + 1} • ` : ''}
+              {confidencePercentage} {UI_COPY.confidenceLabel} • {inferenceDurationMs} ms
+              {engine === 'onnx' ? ' • MobileNetV3' : engine === 'heuristic' ? ' • Fallback' : ''}
+            </span>
           </div>
 
           <button
-            onClick={toggleAllScores}
-            className="flex items-center space-x-1.5 px-3 py-2 rounded-2xl bg-slate-900/90 hover:bg-slate-900 text-xs font-bold text-slate-200 border border-white/10 transition-all shadow-sm active:scale-95"
+            onClick={() => setIsFullscreenModalOpen(true)}
+            title="Inspect leaf image"
+            aria-label="Inspect leaf image"
+            className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/18 border border-white/18 flex items-center justify-center text-white/90 transition-all active:scale-90 flex-shrink-0"
           >
-            <span>{showAllScores ? t.hideAllScores : t.viewAllScores}</span>
-            {showAllScores ? (
-              <ChevronUp className="w-3.5 h-3.5" />
-            ) : (
-              <ChevronDown className="w-3.5 h-3.5" />
-            )}
+            <Maximize2 className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Collapsible All 5 Class Scores Breakdown */}
+        {/* Specimen Preview + Editorial Title */}
+        <div className="flex items-center gap-4">
+          <button
+            onClick={() => setIsFullscreenModalOpen(true)}
+            className="w-16 h-16 rounded-2xl overflow-hidden border border-white/25 flex-shrink-0 bg-black/30 active:scale-95 transition-transform"
+          >
+            <img
+              src={imageUrl}
+              alt={topDisease.name}
+              className="w-full h-full object-cover"
+            />
+          </button>
+
+          <div className="min-w-0">
+            <h2 className="text-[28px] leading-tight font-bold tracking-tight text-white">
+              {topDisease.name}
+            </h2>
+            <p className="text-xs text-white/60 font-medium mt-0.5 italic">
+              {topDisease.scientificName}
+            </p>
+          </div>
+        </div>
+
+        {/* Hairline Divider + Primary Cause */}
+        <div className="border-t border-white/15 pt-4">
+          <p className="text-xs font-medium text-white/55 mb-1.5">
+            {UI_COPY.primaryCausesTitle}
+          </p>
+          <p className="text-sm text-white/90 leading-relaxed">
+            {topDisease.causes}
+          </p>
+        </div>
+
+        {/* Collapsible 5-Class Breakdown */}
         {showAllScores && (
-          <div className="mt-4 pt-3 border-t border-white/10 space-y-2.5 animate-in fade-in duration-200">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-300 mb-1 flex items-center gap-1">
-              <Sparkles className="w-3 h-3 text-amber-400" />
-              <span>Full Class Probability Breakdown (IWBW Judges)</span>
+          <div className="border-t border-white/15 pt-4 space-y-2.5">
+            <p className="text-xs font-medium text-white/55">
+              Class probabilities
             </p>
             {allScores.map((item) => {
               const pctValue = Math.round(item.probability * 100);
               const isTop = item.id === topDisease.id;
               return (
                 <div key={item.id} className="space-y-1">
-                  <div className="flex justify-between text-xs font-medium">
-                    <span
-                      className={`font-['Plus_Jakarta_Sans',var(--font-khmer)] ${
-                        isTop ? 'font-bold text-white' : 'text-slate-300'
-                      }`}
-                    >
-                      {language === 'kh' ? item.nameKh : item.nameEn}
+                  <div className="flex justify-between text-xs">
+                    <span className={isTop ? 'font-semibold text-white' : 'text-white/65'}>
+                      {item.name}
                     </span>
-                    <span className={isTop ? 'font-bold text-emerald-400' : 'text-slate-400'}>
+                    <span className={isTop ? 'font-semibold text-[#f7f0c6]' : 'text-white/55'}>
                       {item.percentage}
                     </span>
                   </div>
-                  <div className="w-full h-2 rounded-full bg-slate-950/80 overflow-hidden border border-slate-700/50">
+                  <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
                     <div
                       className={`h-full rounded-full transition-all duration-500 ${
-                        isTop ? 'bg-gradient-to-r from-emerald-400 to-green-500' : 'bg-slate-500'
+                        isTop ? 'bg-[#f7f0c6]' : 'bg-white/35'
                       }`}
                       style={{ width: `${Math.max(pctValue, 2)}%` }}
-                    ></div>
+                    />
                   </div>
                 </div>
               );
             })}
           </div>
         )}
-      </div>
 
-      {/* Voice Readout & Telegram Share Bar */}
-      <div className="grid grid-cols-2 gap-2.5">
-        {/* Audio Guide Button */}
-        <button
-          onClick={handleToggleVoice}
-          className={`flex items-center justify-center space-x-2 py-3 px-3 rounded-2xl border text-xs font-bold transition-all active:scale-95 shadow-sm ${
-            isSpeaking
-              ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 animate-pulse'
-              : 'bg-slate-900/90 hover:bg-slate-800 text-slate-200 border-slate-700/80'
-          }`}
-        >
-          {isSpeaking ? (
-            <>
-              <VolumeX className="w-4 h-4 text-amber-400" />
-              <span>Stop Voice</span>
-            </>
-          ) : (
-            <>
-              <Volume2 className="w-4 h-4 text-emerald-400" />
-              <span>{t.readAloudBtn}</span>
-            </>
-          )}
-        </button>
+        {/* Bottom Floating Capsule Dock inside Card */}
+        <div className="glass-dock rounded-full p-1.5 flex items-center justify-between gap-2">
+          <button
+            onClick={toggleAllScores}
+            title={showAllScores ? UI_COPY.hideAllScores : UI_COPY.viewAllScores}
+            aria-label={showAllScores ? UI_COPY.hideAllScores : UI_COPY.viewAllScores}
+            className={`w-12 h-12 rounded-full border flex items-center justify-center transition-all active:scale-90 ${
+              showAllScores
+                ? 'bg-white/22 text-white border-white/40'
+                : 'bg-white/8 hover:bg-white/16 text-white/90 border-white/15'
+            }`}
+          >
+            <BarChart3 className="w-4 h-4" />
+          </button>
 
-        {/* Telegram Share Button */}
-        <button
-          onClick={handleShareTelegram}
-          className="flex items-center justify-center space-x-2 py-3 px-3 rounded-2xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 border border-slate-700/80 text-xs font-bold transition-all active:scale-95 shadow-sm"
-        >
-          <Share2 className="w-4 h-4 text-blue-400" />
-          <span>{t.shareBtn}</span>
-        </button>
-      </div>
+          <button
+            onClick={onScanAnother}
+            className="flex-1 h-12 rounded-full bg-[#f7f0c6] hover:bg-[#fcf7da] text-[#1a1612] font-semibold text-sm tracking-tight shadow-lg flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
+          >
+            <RefreshCw className="w-4 h-4" />
+            <span>{UI_COPY.scanAnotherLeaf}</span>
+          </button>
 
-      {/* 4. Actionable Advice Card */}
-      <div className="p-4 sm:p-5 rounded-3xl bg-slate-900/90 border border-slate-800 shadow-xl space-y-3">
-        <div className="flex items-center space-x-2 text-emerald-400">
-          <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
-          <h3 className="text-sm font-extrabold tracking-tight text-white uppercase font-['Plus_Jakarta_Sans',var(--font-khmer)]">
-            {t.actionableAdviceTitle}
-          </h3>
+          <button
+            onClick={handleShareTelegram}
+            title={UI_COPY.shareBtn}
+            aria-label={UI_COPY.shareBtn}
+            className="w-12 h-12 rounded-full bg-white/8 hover:bg-white/16 border border-white/15 flex items-center justify-center text-white/90 transition-all active:scale-90"
+          >
+            <Share2 className="w-4 h-4" />
+          </button>
         </div>
+      </section>
 
+      {/* Recommended Treatment Plan Card */}
+      <section className="glass-card rounded-[28px] p-5 space-y-3">
+        <h3 className="text-xs font-medium uppercase tracking-wider text-white/55">
+          {UI_COPY.actionableAdviceTitle}
+        </h3>
         <ul className="space-y-2.5">
-          {adviceList.map((advice, idx) => (
+          {topDisease.treatmentAdvice.map((advice, idx) => (
             <li
               key={idx}
-              className="flex items-start space-x-3 p-3 rounded-2xl bg-slate-950/70 border border-slate-800 text-xs sm:text-sm font-medium text-slate-100 leading-relaxed font-['Plus_Jakarta_Sans',var(--font-khmer)]"
+              className="flex items-start gap-3 text-sm text-white/90 leading-relaxed"
             >
-              <span className="flex-shrink-0 w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold flex items-center justify-center text-xs mt-0.5 border border-emerald-500/30">
+              <span className="flex-shrink-0 w-5 h-5 rounded-full bg-white/12 border border-white/20 text-[#f7f0c6] font-semibold flex items-center justify-center text-[11px] mt-0.5">
                 {idx + 1}
               </span>
               <span>{advice}</span>
             </li>
           ))}
         </ul>
-      </div>
+      </section>
 
-      {/* 5. Primary Causes & Biology Card */}
-      <div className="p-4 rounded-3xl bg-slate-900/70 border border-slate-800/80 text-xs space-y-1.5 shadow-sm">
-        <div className="flex items-center space-x-1.5 text-slate-300 font-bold">
-          <Info className="w-4 h-4 text-blue-400" />
-          <span>{t.primaryCausesTitle}</span>
-        </div>
-        <p className="text-slate-300 leading-relaxed font-['Plus_Jakarta_Sans',var(--font-khmer)]">
-          {causeText}
-        </p>
-      </div>
-
-      {/* Fallback In-App Scan Another Button (if outside Telegram client) */}
-      <div className="pt-2">
-        <button
-          onClick={() => {
-            triggerHaptic('impact', 'medium');
-            onScanAnother();
-          }}
-          className="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-emerald-600 via-green-600 to-emerald-600 hover:from-emerald-500 hover:to-green-500 text-white font-extrabold text-base tracking-wide shadow-xl shadow-emerald-900/40 border border-emerald-400/40 flex items-center justify-center space-x-2 active:scale-[0.98] transition-all font-['Plus_Jakarta_Sans',var(--font-khmer)]"
-        >
-          <RefreshCw className="w-5 h-5" />
-          <span>
-            {language === 'kh'
-              ? 'ស្កេនស្លឹកថ្មី / Scan Another Leaf'
-              : 'Scan Another Leaf / ស្កេនស្លឹកថ្មី'}
-          </span>
-        </button>
-      </div>
+      {/* All Scanned Leaves Overview Table (Batch Mode) */}
+      {isBatch && (
+        <section className="glass-card rounded-[28px] p-5 space-y-3">
+          <h3 className="text-xs font-medium uppercase tracking-wider text-white/55">
+            All scanned leaves
+          </h3>
+          <div className="space-y-2">
+            {diagnoses.map((item, idx) => {
+              const isSelected = idx === selectedIndex;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => {
+                    triggerHaptic('selection');
+                    setSelectedIndex(idx);
+                  }}
+                  className={`w-full flex items-center justify-between p-2.5 rounded-2xl border transition-all text-left ${
+                    isSelected
+                      ? 'bg-white/16 border-white/40'
+                      : 'bg-white/5 hover:bg-white/10 border-white/10'
+                  }`}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <img
+                      src={item.imageUrl}
+                      alt={item.topDisease.name}
+                      className="w-10 h-10 rounded-xl object-cover border border-white/20 flex-shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-white truncate">
+                        Leaf #{idx + 1} • {item.topDisease.name}
+                      </p>
+                      <p className="text-xs text-white/60">
+                        {getSeverityLabel(item.topDisease.severity)} • {item.confidencePercentage}
+                      </p>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-white/50 flex-shrink-0" />
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {/* Fullscreen Specimen Zoom Modal */}
       {isFullscreenModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/95 flex flex-col items-center justify-center p-4 animate-in fade-in duration-200">
+        <div
+          onClick={() => setIsFullscreenModalOpen(false)}
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-5"
+        >
           <button
             onClick={() => setIsFullscreenModalOpen(false)}
-            className="absolute top-6 right-6 p-3 rounded-full bg-slate-800 text-white hover:bg-slate-700"
+            aria-label="Close fullscreen view"
+            className="absolute top-5 right-5 w-10 h-10 rounded-full bg-white/12 border border-white/20 text-white flex items-center justify-center hover:bg-white/20"
           >
-            <X className="w-6 h-6" />
+            <X className="w-5 h-5" />
           </button>
-          <div className="max-w-md w-full rounded-3xl overflow-hidden border-2 border-emerald-500 shadow-2xl">
-            <img src={imageUrl} alt="Enlarged leaf" className="w-full h-auto object-contain" />
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="max-w-md w-full rounded-3xl overflow-hidden border border-white/25 shadow-2xl"
+          >
+            <img src={imageUrl} alt={topDisease.name} className="w-full h-auto object-contain" />
           </div>
-          <p className="text-xs text-slate-400 mt-4 font-medium">
-            {language === 'kh' ? 'រូបភាពស្លឹកពង្រីកសម្រាប់ពិនិត្យ' : 'High-Resolution Leaf Specimen View'}
+          <p className="text-xs text-white/60 mt-4 font-medium">
+            {topDisease.name} • {confidencePercentage}
           </p>
         </div>
       )}

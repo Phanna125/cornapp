@@ -1,76 +1,129 @@
 @import "tailwindcss";
 
 :root {
-  --font-khmer: 'Kantumruy Pro', 'Khmer OS Battambang', 'Hanuman', system-ui, -apple-system, sans-serif;
-  --font-latin: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
 
-  /* Default fallback colors if running standalone outside Telegram */
-  --tg-theme-bg-color: #0b1320;
-  --tg-theme-text-color: #f8fafc;
-  --tg-theme-hint-color: #94a3b8;
-  --tg-theme-link-color: #38bdf8;
-  --tg-theme-button-color: #16a34a;
-  --tg-theme-button-text-color: #ffffff;
-  --tg-theme-secondary-bg-color: #152238;
-  --tg-theme-header-bg-color: #0b1320;
+  /* Warm organic palette tokens */
+  --bg-base: #1b1411;
+  --text-primary: #f7f4ef;
+  --text-muted: rgba(247, 244, 239, 0.68);
+  --cta-cream: #f7f0c6;
+  --cta-cream-hover: #fcf7da;
+  --cta-ink: #1a1612;
 }
 
 body {
-  font-family: var(--font-latin), var(--font-khmer);
-  background-color: var(--tg-theme-bg-color);
-  color: var(--tg-theme-text-color);
+  font-family: var(--font-sans);
+  background-color: var(--bg-base);
+  color: var(--text-primary);
   margin: 0;
   padding: 0;
   overscroll-behavior-y: none;
   -webkit-tap-highlight-color: transparent;
 }
 
-/* High contrast outdoor mode toggle or support */
-.outdoor-contrast {
-  --contrast-border: #ffffff33;
+/* Warm ambient organic mesh backdrop inspired by reference */
+.ambient-canvas {
+  background-color: #1d1512;
+  background-image:
+    radial-gradient(circle at 82% 8%, rgba(214, 198, 178, 0.42) 0%, transparent 42%),
+    radial-gradient(circle at 18% 18%, rgba(122, 74, 48, 0.72) 0%, transparent 52%),
+    radial-gradient(circle at 86% 48%, rgba(128, 152, 156, 0.46) 0%, transparent 46%),
+    radial-gradient(circle at 30% 68%, rgba(114, 62, 38, 0.85) 0%, transparent 55%),
+    radial-gradient(circle at 68% 88%, rgba(176, 134, 52, 0.65) 0%, transparent 50%);
+  background-attachment: fixed;
 }
 
-/* Scanner Laser Animation */
-@keyframes laserSweep {
+/* High-contrast solid outdoor mode */
+.outdoor-solid {
+  background-color: #0d0d0d;
+  background-image: none;
+}
+
+/* Frosted glass card surface */
+.glass-card {
+  background: linear-gradient(
+    145deg,
+    rgba(255, 255, 255, 0.13) 0%,
+    rgba(255, 255, 255, 0.05) 55%,
+    rgba(255, 255, 255, 0.08) 100%
+  );
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    0 24px 48px -16px rgba(0, 0, 0, 0.48);
+}
+
+.outdoor-solid .glass-card {
+  background: #171717;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.6);
+}
+
+/* Floating capsule dock */
+.glass-dock {
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.outdoor-solid .glass-dock {
+  background: #222222;
+  border: 1.5px solid rgba(255, 255, 255, 0.3);
+}
+
+/* Circular orb items */
+.glass-orb {
+  background: radial-gradient(
+    circle at 32% 28%,
+    rgba(255, 255, 255, 0.16) 0%,
+    rgba(255, 255, 255, 0.04) 70%
+  );
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.glass-orb-active {
+  background: radial-gradient(
+    circle at 35% 25%,
+    rgba(255, 255, 255, 0.55) 0%,
+    rgba(196, 208, 224, 0.22) 55%,
+    rgba(255, 255, 255, 0.12) 100%
+  );
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1.5px solid rgba(255, 255, 255, 0.72);
+  box-shadow: 0 8px 24px -6px rgba(0, 0, 0, 0.35);
+}
+
+/* Subtle scan line for analyzing view */
+@keyframes scanSweep {
   0% {
-    top: 5%;
-    opacity: 0.2;
+    top: 8%;
+    opacity: 0.25;
   }
   50% {
-    top: 90%;
-    opacity: 1;
+    top: 88%;
+    opacity: 0.9;
   }
   100% {
-    top: 5%;
-    opacity: 0.2;
+    top: 8%;
+    opacity: 0.25;
   }
 }
 
-.animate-laser {
-  animation: laserSweep 2s ease-in-out infinite;
+.animate-scan-line {
+  animation: scanSweep 2.2s ease-in-out infinite;
 }
 
-/* Radar pulse animation */
-@keyframes radarPulse {
-  0% {
-    transform: scale(0.95);
-    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.6);
-  }
-  70% {
-    transform: scale(1.03);
-    box-shadow: 0 0 0 18px rgba(34, 197, 94, 0);
-  }
-  100% {
-    transform: scale(0.95);
-    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
-  }
-}
-
-.animate-radar {
-  animation: radarPulse 2.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-
-/* Custom scrollbar for horizontal scan history */
+/* Custom scrollbar hiding */
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
